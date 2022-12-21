@@ -1,4 +1,17 @@
 import logging
+from pathlib import Path
+
+
+def file_exists(my_file: Path, ignore: bool = False):
+    if not my_file.exists():
+        if not ignore:
+            logging.error(f'File {my_file} does not exist')
+            exit(1)
+        else:
+            logging.warning(f'File {my_file} does not exist')
+            return False
+    else:
+        return True
 
 
 def parse_args():
@@ -41,7 +54,10 @@ def parse_args():
 def run(*args, **kwargs):
     args = parse_args()
     logging.basicConfig(level=args.loglevel)
-    logging.warning("There is not yet any code to run")
+
+    # Confirm files exist
+    file_exists(args.r1_fastq)
+    file_exists(args.r2_fastq)
 
 
 if __name__ == '__main__':
