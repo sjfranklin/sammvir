@@ -5,6 +5,19 @@ def parse_args():
     import argparse
 
     parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        '-f', '--forward',
+        help="R1 (forward) FASTQ file", type=Path,
+        dest="r1_fastq", required=True
+
+    )
+    parser.add_argument(
+        '-r', '--reverse',
+        help="R2 (reverse) FASTQ file", type=Path,
+        dest="r2_fastq", required=True
+
+    )
     parser.add_argument(
         '-d', '--debug',
         help="Print lots of debugging statements",
