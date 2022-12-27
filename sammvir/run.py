@@ -48,6 +48,12 @@ def parse_args():
         action="store_const", dest="loglevel", const=logging.ERROR,
     )
 
+    parser.add_argument(
+        '--dry-run',
+        help="Run in dry_run mode: print commands but do not execute",
+        action="store_true", required=False, default=False
+    )
+
     return parser.parse_args()
 
 
