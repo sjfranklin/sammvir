@@ -1,5 +1,42 @@
 import logging
+import shlex
+import os
 from pathlib import Path
+
+
+def run_trimmomatic(r1_fastq: Path, r2_fastq: Path, output_dir: Path,
+                    adapters: Path, dry_run: bool = False):
+
+    trim_dir = output_dir / 'trimmomatic'
+    if not trim_dir.exists():
+        trim_dir.mkdir()
+
+    r1_base = r1_fastq.name.strip('.fastq.gz')
+    r2_base = r2_fastq.name.strip('.fastq.gz')
+    r1_fastq_trim_paired = trim_dir / f"{r1_base}.trim.paired.fastq.gz"
+    r2_fastq_trim_paired = trim_dir / f"{r2_base}.trim.paired.fastq.gz"
+    r1_fastq_trim_unpaired = trim_dir / f"{r1_base}.trim.unpaired.fastq.gz"
+    r2_fastq_trim_unpaired = trim_dir / f"{r2_base}.trim.unpaired.fastq.gz"
+
+    trimmomatic_command = [
+        'trimmomatic', 'PE', str(r1_fastq), str(r2_fastq),
+        str(r1_fastq_trim_paired), str(r1_fastq_trim_unpaired),
+        str(r2_fastq_trim_paired), str(r2_fastq_trim_unpaired),
+        f"ILLUMINACLIP:{adapters}:2:30:10", "LEADING:3",
+        "TRAILING:3",  "SLIDINGWINDOW:4:15", "MINLEN:36"
+    ]
+
+    logging.info(f"Trimmomatic command: {shlex.join(trimmomatic_command)}")
+
+    if not dry_run:
+        os.system(shlex.join(trimmomatic_command))
+        for out_file in [r1_fastq_trim_paired, r1_fastq_trim_unpaired,
+                         r2_fastq_trim_paired, r2_fastq_trim_unpaired]:
+            if not out_file.exists():
+                logging.error(
+                    f"Trimmomatic file {out_file} failed to generate")
+                exit(1)
+    return r1_fastq_trim_paired, r2_fastq_trim_paired, shlex.join(trimmomatic_command)
 
 
 def file_exists(my_file: Path, ignore: bool = False):
@@ -31,6 +68,18 @@ def parse_args():
         dest="r2_fastq", required=True
 
     )
+
+    parser.add_argument(
+        '-a', '--adapters',
+        help="File with Illumina adapters", type=Path,
+        dest="adapters", required=True
+
+    )
+    parser.add_argument(
+        '-o', '--output-dir',
+        help="Directory for output and temp analysis files", type=Path,
+        dest="output_dir", required=False, default=os.getcwd()
+    )
     parser.add_argument(
         '-d', '--debug',
         help="Print lots of debugging statements",
@@ -48,6 +97,12 @@ def parse_args():
         action="store_const", dest="loglevel", const=logging.ERROR,
     )
 
+    parser.add_argument(
+        '--dry-run',
+        help="Run in dry_run mode: print commands but do not execute",
+        action="store_true", required=False, default=False
+    )
+
     return parser.parse_args()
 
 
@@ -58,6 +113,17 @@ def run(*args, **kwargs):
     # Confirm files exist
     file_exists(args.r1_fastq)
     file_exists(args.r2_fastq)
+
+    if not args.output_dir.exists():
+        args.output_dir.mkdir()
+
+    tmp_dir = args.output_dir / 'tmp'
+
+    if not tmp_dir.exists():
+        tmp_dir.mkdir()
+
+    r1_fq_trim, r2_fq_trim, trim_cmd = run_trimmomatic(
+        args.r1_fastq, args.r2_fastq, tmp_dir, args.adapters, dry_run=args.dry_run)
 
 
 if __name__ == '__main__':
