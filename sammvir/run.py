@@ -1,5 +1,6 @@
 import logging
 import shlex
+import shutil
 import os
 from pathlib import Path
 
@@ -69,6 +70,29 @@ def run_trimmomatic(r1_fastq: Path, r2_fastq: Path, output_dir: Path,
     return r1_fastq_trim_paired, r2_fastq_trim_paired, shlex.join(trimmomatic_command)
 
 
+def run_megahit(r1_fastq: Path, r2_fastq: Path, output_dir: Path,
+                sample_name: str, dry_run: bool = False):
+
+    megahit_dir = output_dir / "megahit"
+    final_contigs = megahit_dir / f"{sample_name}.contigs.fa"
+    print(f"\n\n\n{megahit_dir}")
+    megahit_command = [
+        "megahit", "-1", str(r1_fastq), "-2", str(r2_fastq), "-o",
+        str(megahit_dir), "--out-prefix", sample_name
+    ]
+
+    logging.info(f"Megahit command: {shlex.join(megahit_command)}")
+    if not dry_run:
+        os.system(shlex.join(megahit_command))
+        if not final_contigs.exists():
+            logging.error(
+                f"Megahit file {final_contigs} failed to generate")
+            exit(1)
+
+    return final_contigs, megahit_command
+
+
+
 def file_exists(my_file: Path, ignore: bool = False):
     if not my_file.exists():
         if not ignore:
@@ -106,6 +130,11 @@ def parse_args():
 
     )
     parser.add_argument(
+        '-s', '--sample-name',
+        help="Name of sample", type=str,
+        dest="sample_name", required=True
+    )
+    parser.add_argument(
         '--use-bbduk',
         help="Use BBDuk instead of Trimmomatic for read QC",
         action="store_true", required=False, default=False
@@ -131,10 +160,14 @@ def parse_args():
         help="Be quiet: silence warnings",
         action="store_const", dest="loglevel", const=logging.ERROR,
     )
-
     parser.add_argument(
         '--dry-run',
         help="Run in dry_run mode: print commands but do not execute",
+        action="store_true", required=False, default=False
+    )
+    parser.add_argument(
+        '--force-run',
+        help="Force overwriting existing files in the output directory",
         action="store_true", required=False, default=False
     )
 
@@ -154,15 +187,33 @@ def run(*args, **kwargs):
 
     tmp_dir = args.output_dir / 'tmp'
 
-    if not tmp_dir.exists():
+    if tmp_dir.exists():
+        if args.force_run:
+            logging.warning(f"Removing and recreating directory {tmp_dir}")
+            shutil.rmtree(tmp_dir)
+            tmp_dir.mkdir()
+        else:
+            logging.error(f"Output directory {tmp_dir} already exists. "
+                          "Some down-stream software will fail. Specify "
+                          "new output directory or use --force-run, which "
+                          "will overwrite existing files.")
+            exit(1)
+    else:
         tmp_dir.mkdir()
 
+    # Run QC on Reads with Trimmomatic or BBDuk
     if args.use_bbduk:
         r1_fq_trim, r2_fq_trim, trim_cmd = run_bbduk(
-            args.r1_fastq, args.r2_fastq, tmp_dir, args.adapters, dry_run=args.dry_run)
+            args.r1_fastq, args.r2_fastq, tmp_dir, args.adapters,
+            dry_run=args.dry_run)
     else:
         r1_fq_trim, r2_fq_trim, trim_cmd = run_trimmomatic(
-            args.r1_fastq, args.r2_fastq, tmp_dir, args.adapters, dry_run=args.dry_run)
+            args.r1_fastq, args.r2_fastq, tmp_dir, args.adapters,
+            dry_run=args.dry_run)
+
+    # Run de novo assembly
+    contigs, megahit_cmd = run_megahit(r1_fq_trim, r2_fq_trim, tmp_dir,
+                                       args.sample_name, dry_run=args.dry_run)
 
 
 if __name__ == '__main__':
