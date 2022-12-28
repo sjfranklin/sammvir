@@ -4,6 +4,36 @@ import os
 from pathlib import Path
 
 
+def run_bbduk(r1_fastq: Path, r2_fastq: Path, output_dir: Path,
+              adapters: Path, dry_run: bool = False):
+    bbduk_dir = output_dir / 'bbduk'
+    if not bbduk_dir.exists():
+        bbduk_dir.mkdir()
+
+    r1_base = r1_fastq.name.strip('.fastq.gz')
+    r2_base = r2_fastq.name.strip('.fastq.gz')
+    r1_fastq_trim_paired = bbduk_dir / f"{r1_base}.trim.paired.fastq.gz"
+    r2_fastq_trim_paired = bbduk_dir / f"{r2_base}.trim.paired.fastq.gz"
+
+    bbduk_command = [
+        'bbduk.sh', f"in1={r1_fastq}", f"in2={r2_fastq}",
+        f"out1={r1_fastq_trim_paired}", f"out2={r2_fastq_trim_paired}",
+        f"ref={adapters}", "ktrim=r", "k=23", "mink=11", "hdist=1", "tpe",
+        "tbo", "trimq=20"
+    ]
+
+    logging.info(f"BBDuk QC command: {shlex.join(bbduk_command)}")
+
+    if not dry_run:
+        os.system(shlex.join(bbduk_command))
+        for out_file in [r1_fastq_trim_paired, r2_fastq_trim_paired]:
+            if not out_file.exists():
+                logging.error(
+                    f"BBDuk QC file {out_file} failed to generate")
+                exit(1)
+    return r1_fastq_trim_paired, r2_fastq_trim_paired, shlex.join(bbduk_command)
+
+
 def run_trimmomatic(r1_fastq: Path, r2_fastq: Path, output_dir: Path,
                     adapters: Path, dry_run: bool = False):
 
@@ -76,6 +106,11 @@ def parse_args():
 
     )
     parser.add_argument(
+        '--use-bbduk',
+        help="Use BBDuk instead of Trimmomatic for read QC",
+        action="store_true", required=False, default=False
+    )
+    parser.add_argument(
         '-o', '--output-dir',
         help="Directory for output and temp analysis files", type=Path,
         dest="output_dir", required=False, default=os.getcwd()
@@ -122,8 +157,12 @@ def run(*args, **kwargs):
     if not tmp_dir.exists():
         tmp_dir.mkdir()
 
-    r1_fq_trim, r2_fq_trim, trim_cmd = run_trimmomatic(
-        args.r1_fastq, args.r2_fastq, tmp_dir, args.adapters, dry_run=args.dry_run)
+    if args.use_bbduk:
+        r1_fq_trim, r2_fq_trim, trim_cmd = run_bbduk(
+            args.r1_fastq, args.r2_fastq, tmp_dir, args.adapters, dry_run=args.dry_run)
+    else:
+        r1_fq_trim, r2_fq_trim, trim_cmd = run_trimmomatic(
+            args.r1_fastq, args.r2_fastq, tmp_dir, args.adapters, dry_run=args.dry_run)
 
 
 if __name__ == '__main__':
