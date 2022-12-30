@@ -92,6 +92,87 @@ def run_megahit(r1_fastq: Path, r2_fastq: Path, output_dir: Path,
     return final_contigs, megahit_command
 
 
+def align_contigs_to_ref(contigs: Path, reference: Path, align_dir: Path,
+                         sample_name: str, dry_run: bool = False):
+    "bwa-mem2 mem /data/sfranklin_data/references/EPI_ISL_402124.fasta ../megahit/955.contigs.fa > 955_contig_assembly.sam"
+
+    sam_file = align_dir / f"{sample_name}.aligned.sam"
+    # Note: this was tested on conda-installed bwa-mem2
+    bwa_mem2_command = [
+        'bwa-mem2', 'mem', str(reference), str(contigs), '-o',
+        str(sam_file)
+    ]
+
+    logging.info(f"bwa mem command: {shlex.join(bwa_mem2_command)}")
+
+    if not dry_run:
+        os.system(shlex.join(bwa_mem2_command))
+        if not sam_file.exists():
+            logging.error(
+                f"Contig alignment file {sam_file} failed to generate")
+            exit(1)
+
+    return sam_file, bwa_mem2_command
+
+
+def sam_to_bam(sam_file: Path, reference: Path, dry_run: bool = False):
+    "samtools view -bh -o 955_contig_assembly.bam 955_contig_assembly.sam -T /data/sfranklin_data/references/EPI_ISL_402124.fasta"
+    bam_file = sam_file.with_suffix('.bam')
+
+    sam_to_bam_command = [
+        'samtools', 'view', '-bh', '-o', str(bam_file), str(sam_file),
+        '-T', str(reference)
+    ]
+
+    logging.info(f"sam to bam command: {shlex.join(sam_to_bam_command)}")
+
+    if not dry_run:
+        os.system(shlex.join(sam_to_bam_command))
+        if not bam_file.exists():
+            logging.error(
+                f"bam file {bam_file} failed to generate")
+            exit(1)
+
+    return bam_file, sam_to_bam_command
+
+
+def sort_bam(unsorted_bam: Path, dry_run: bool = False):
+    "samtools sort -o 955_contig_assembly.sorted.bam 955_contig_assembly.bam "
+    sorted_bam = unsorted_bam.with_suffix('.sorted.bam')
+
+    sort_bam_command = [
+        'samtools', 'sort', '-o', str(sorted_bam), str(unsorted_bam)
+    ]
+
+    logging.info(f"Sort bam command: {shlex.join(sort_bam_command)}")
+
+    if not dry_run:
+        os.system(shlex.join(sort_bam_command))
+        if not sorted_bam.exists():
+            logging.error(
+                f"Sorted bam file {sorted_bam} failed to generate")
+            exit(1)
+
+    return sorted_bam, sort_bam_command
+
+def samtools_index_bam(bam_file: Path, dry_run: bool = False):
+    bam_index = bam_file.with_suffix('.bam.bai')
+
+    samtools_index_command = [
+        'samtools', 'index', str(bam_file)
+    ]
+
+    logging.info(f"Index bam command: {shlex.join(samtools_index_command)}")
+
+    if not dry_run:
+        os.system(shlex.join(samtools_index_command))
+        if not bam_index.exists():
+            logging.error(
+                f"Indexed bam file {bam_index} failed to generate")
+            exit(1)
+
+    return bam_index, samtools_index_command
+
 
 def call_samtools_consensus(sorted_bam: Path, output_dir: Path,
                             sample_name: str, dry_run: bool = False):
@@ -146,7 +227,6 @@ def parse_args():
         dest="r2_fastq", required=True
 
     )
-
     parser.add_argument(
         '-a', '--adapters',
         help="File with Illumina adapters", type=Path,
@@ -157,6 +237,11 @@ def parse_args():
         '-s', '--sample-name',
         help="Name of sample", type=str,
         dest="sample_name", required=True
+    )
+    parser.add_argument(
+        '--reference',
+        help="Reference genome for virus", type=Path,
+        dest="reference", required=True
     )
     parser.add_argument(
         '--use-bbduk',
@@ -238,6 +323,28 @@ def run(*args, **kwargs):
     # Run de novo assembly
     contigs, megahit_cmd = run_megahit(r1_fq_trim, r2_fq_trim, tmp_dir,
                                        args.sample_name, dry_run=args.dry_run)
+
+    align_dir = tmp_dir / "bwa"
+
+    if not align_dir.exists():
+        align_dir.mkdir()
+
+    aligned_contigs, align_contigs_cmd = align_contigs_to_ref(
+        contigs, args.reference, align_dir, args.sample_name,
+        dry_run=args.dry_run)
+
+    bam_aligned_contigs, sam_to_bam_cmd = sam_to_bam(
+        aligned_contigs, args.reference, dry_run=args.dry_run)
+
+    sorted_aligned_contigs, sort_bam_cmd = sort_bam(
+        bam_aligned_contigs, dry_run=args.dry_run)
+
+    indexed_bam, index_bam_cmd  = samtools_index_bam(
+        sorted_aligned_contigs, dry_run=args.dry_run)
+
+    consensus_fasta = call_samtools_consensus(
+        sorted_aligned_contigs, align_dir, args.sample_name,
+        dry_run=args.dry_run)
 
 
 if __name__ == '__main__':
