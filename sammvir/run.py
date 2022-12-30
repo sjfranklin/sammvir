@@ -93,6 +93,30 @@ def run_megahit(r1_fastq: Path, r2_fastq: Path, output_dir: Path,
 
 
 
+def call_samtools_consensus(sorted_bam: Path, output_dir: Path,
+                            sample_name: str, dry_run: bool = False):
+    "samtools consensus -f FASTA 955_contig_assembly.sorted.bam > 955.consensus.fasta"
+
+    consensus_fasta = output_dir / f"{sample_name}.consensus.fasta"
+
+    samtools_consensus_command = [
+        'samtools', 'consensus', '-f', 'FASTA', '-m', 'simple', str(sorted_bam),
+        '-o', str(consensus_fasta)
+    ]
+
+    logging.info(f"Samtools consensus command: {shlex.join(samtools_consensus_command)}")
+
+    if not dry_run:
+        os.system(shlex.join(samtools_consensus_command))
+        if not consensus_fasta.exists():
+            logging.error(
+                f"Consensus file {consensus_fasta} failed to generate")
+            exit(1)
+
+    return consensus_fasta, samtools_consensus_command
+
+
+    _
 def file_exists(my_file: Path, ignore: bool = False):
     if not my_file.exists():
         if not ignore:
