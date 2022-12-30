@@ -94,29 +94,28 @@ def run_megahit(r1_fastq: Path, r2_fastq: Path, output_dir: Path,
 
 def align_contigs_to_ref(contigs: Path, reference: Path, align_dir: Path,
                          sample_name: str, dry_run: bool = False):
-    "bwa-mem2 mem /data/sfranklin_data/references/EPI_ISL_402124.fasta ../megahit/955.contigs.fa > 955_contig_assembly.sam"
 
     sam_file = align_dir / f"{sample_name}.aligned.sam"
     # Note: this was tested on conda-installed bwa-mem2
-    bwa_mem2_command = [
+    bwa_mem2_fa_command = [
         'bwa-mem2', 'mem', str(reference), str(contigs), '-o',
         str(sam_file)
     ]
 
-    logging.info(f"bwa mem command: {shlex.join(bwa_mem2_command)}")
+    logging.info(f"bwa mem command: {shlex.join(bwa_mem2_fa_command)}")
 
     if not dry_run:
-        os.system(shlex.join(bwa_mem2_command))
+        os.system(shlex.join(bwa_mem2_fa_command))
         if not sam_file.exists():
             logging.error(
                 f"Contig alignment file {sam_file} failed to generate")
             exit(1)
 
-    return sam_file, bwa_mem2_command
+    return sam_file, bwa_mem2_fa_command
 
 
 def sam_to_bam(sam_file: Path, reference: Path, dry_run: bool = False):
-    "samtools view -bh -o 955_contig_assembly.bam 955_contig_assembly.sam -T /data/sfranklin_data/references/EPI_ISL_402124.fasta"
+
     bam_file = sam_file.with_suffix('.bam')
 
     sam_to_bam_command = [
@@ -137,7 +136,7 @@ def sam_to_bam(sam_file: Path, reference: Path, dry_run: bool = False):
 
 
 def sort_bam(unsorted_bam: Path, dry_run: bool = False):
-    "samtools sort -o 955_contig_assembly.sorted.bam 955_contig_assembly.bam "
+
     sorted_bam = unsorted_bam.with_suffix('.sorted.bam')
 
     sort_bam_command = [
@@ -173,10 +172,31 @@ def samtools_index_bam(bam_file: Path, dry_run: bool = False):
 
     return bam_index, samtools_index_command
 
+def align_reads_to_consensus(r1_fastq: Path, r2_fastq: Path, reference: Path,
+                             align_dir: Path, sample_name: str,
+                             dry_run: bool = False):
+
+    sam_file = align_dir / f"{sample_name}.consensus.aligned.sam"
+    # Note: this was tested on conda-installed bwa-mem2
+    bwa_mem2_fq_command = [
+        'bwa-mem2', 'mem', str(reference), '-o', str(sam_file), str(r1_fastq),
+	 str(r2_fastq)
+    ]
+
+    logging.info(f"bwa mem command: {shlex.join(bwa_mem2_fq_command)}")
+
+    if not dry_run:
+        os.system(shlex.join(bwa_mem2_fq_command))
+        if not sam_file.exists():
+            logging.error(
+                f"Read alignment file {sam_file} failed to generate")
+            exit(1)
+
+    return sam_file, bwa_mem2_fq_command
+
 
 def call_samtools_consensus(sorted_bam: Path, output_dir: Path,
                             sample_name: str, dry_run: bool = False):
-    "samtools consensus -f FASTA 955_contig_assembly.sorted.bam > 955.consensus.fasta"
 
     consensus_fasta = output_dir / f"{sample_name}.consensus.fasta"
 
@@ -223,7 +243,6 @@ def bwa_index_fasta(fasta: Path, dry_run: bool = False):
 
     return fasta_index, bwa_index_fasta_command
 
-    _
 def file_exists(my_file: Path, ignore: bool = False):
     if not my_file.exists():
         if not ignore:
@@ -311,7 +330,9 @@ def parse_args():
 
 def run(*args, **kwargs):
     args = parse_args()
-    logging.basicConfig(level=args.loglevel)
+
+    log_format='%(levelname)s: %(filename)s: line %(lineno)d in %(funcName)s: \n\t%(message)s\n'
+    logging.basicConfig(level=args.loglevel, format=log_format)
 
     # Confirm files exist
     file_exists(args.r1_fastq)
@@ -368,9 +389,26 @@ def run(*args, **kwargs):
     indexed_bam, index_bam_cmd  = samtools_index_bam(
         sorted_aligned_contigs, dry_run=args.dry_run)
 
-    consensus_fasta = call_samtools_consensus(
+    consensus_fasta, samtools_consensus_cmd = call_samtools_consensus(
         sorted_aligned_contigs, align_dir, args.sample_name,
         dry_run=args.dry_run)
+
+    # Map all the high quality reads to the new consensus
+    indexed_fasta, bwa_index_fasta_cmd = bwa_index_fasta(
+        consensus_fasta, dry_run=args.dry_run)
+
+    aligned_reads, align_reads_cmd = align_reads_to_consensus(
+        r1_fq_trim, r2_fq_trim, consensus_fasta, align_dir, args.sample_name,
+        dry_run=args.dry_run)
+
+    bam_aligned_reads, read_sam_to_bam_cmd = sam_to_bam(
+        aligned_reads, consensus_fasta, dry_run=args.dry_run)
+
+    sorted_bam_aligned_reads, sort_bam_aligned_reads = sort_bam(
+        bam_aligned_reads, dry_run=args.dry_run)
+
+    indexed_reads_bam, index_reads_bam_cmd = samtools_index_bam(
+        sorted_bam_aligned_reads, dry_run=args.dry_run)
 
 
 if __name__ == '__main__':
