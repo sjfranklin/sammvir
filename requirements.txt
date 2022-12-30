@@ -1,3 +1,6 @@
 pytest
 trimmomatic
 bbmap
+megahit
+bwa-mem2
+samtools>=1.16
