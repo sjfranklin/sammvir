@@ -196,6 +196,32 @@ def call_samtools_consensus(sorted_bam: Path, output_dir: Path,
 
     return consensus_fasta, samtools_consensus_command
 
+def bwa_index_fasta(fasta: Path, dry_run: bool = False):
+    if str(fasta).endswith('.fasta'):
+        fasta_index = fasta.with_suffix('.fasta.pac')
+        logging.info(f"FASTA index {fasta_index}")
+    elif str(fasta).endswith('.fa'):
+        fasta_index = fasta.with_suffix('.fa.pac')
+        logging.info(f"FASTA index {fasta_index}")
+    else:
+        logging.error(f"unrecognized extension on fasta {fasta}")
+
+    bwa_index_fasta_command =[
+        'bwa-mem2', 'index', str(fasta)
+    ]
+
+    logging.info(f"bwa index command: {shlex.join(bwa_index_fasta_command)}")
+
+    if not dry_run:
+        os.system(shlex.join(bwa_index_fasta_command))
+        if not fasta_index.exists():
+            # This is actually just one of the files BWA generates.
+            # Quick stand in to ensure it runs properly.
+            logging.error(
+                f"FASTA index {fasta_index} failed to generate")
+            exit(1)
+
+    return fasta_index, bwa_index_fasta_command
 
     _
 def file_exists(my_file: Path, ignore: bool = False):
