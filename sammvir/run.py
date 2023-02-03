@@ -36,7 +36,15 @@ def run_bbduk(r1_fastq: Path, r2_fastq: Path, output_dir: Path,
 
 
 def run_trimmomatic(r1_fastq: Path, r2_fastq: Path, output_dir: Path,
-                    adapters: Path, dry_run: bool = False):
+                    adapters: Path, dry_run: bool = False,
+                    seed_mismatches: int = 2,
+                    palindrome_threshold: int = 30,
+                    clip_threshold: int = 10,
+                    leading_quality: int = 3,
+                    trailing_quality: int = 3,
+                    sliding_window_size: int = 4,
+                    sliding_window_quality: int = 15,
+                    minlength: int = 36):
 
     trim_dir = output_dir / 'trimmomatic'
     if not trim_dir.exists():
@@ -53,8 +61,11 @@ def run_trimmomatic(r1_fastq: Path, r2_fastq: Path, output_dir: Path,
         'trimmomatic', 'PE', str(r1_fastq), str(r2_fastq),
         str(r1_fastq_trim_paired), str(r1_fastq_trim_unpaired),
         str(r2_fastq_trim_paired), str(r2_fastq_trim_unpaired),
-        f"ILLUMINACLIP:{adapters}:2:30:10", "LEADING:3",
-        "TRAILING:3",  "SLIDINGWINDOW:4:15", "MINLEN:36"
+        f"ILLUMINACLIP:{adapters}:{seed_mismatches}:{palindrome_threshold}:{clip_threshold}",
+        f"LEADING:{leading_quality}",
+        f"TRAILING:{trailing_quality}",
+        f"SLIDINGWINDOW:{sliding_window_size}:{sliding_window_quality}",
+        f"MINLEN:{minlength}"
     ]
 
     logging.info(f"Trimmomatic command: {shlex.join(trimmomatic_command)}")
