@@ -5,6 +5,38 @@ import os
 from pathlib import Path
 
 
+def detected_cpus():
+    system_cpus = len(os.sched_getaffinity(0))
+    logging.info(f"Dectected {system_cpus} CPUs on system")
+    return system_cpus
+
+def auto_set_threads(divisor: int = 2):
+    system_cpus = detected_cpus()
+    threads = int(system_cpus / 2)
+    if threads < 1:
+        threads = 1
+    logging.info(f"Auto set threads are {threads}")
+    return threads
+
+def set_threads(user_provided_threads, divisor: int = 2):
+    system_cpus = detected_cpus()
+    if user_provided_threads is not None:
+        if user_provided_threads <= system_cpus:
+            logging.info(f"{user_provided_threads} requested and physically available. "
+                         "Note that this may overload the system if others are using it.")
+            return user_provided_threads
+        else:
+            logging.warning(f"User requested {user_provided_threads}, but "
+                            f"only {system_cpus} are available.")
+            threads = auto_set_threads()
+            return threads
+    else:
+        threads = auto_set_threads()
+        return threads
+
+
+
+
 def run_bbduk(r1_fastq: Path, r2_fastq: Path, output_dir: Path,
               adapters: Path, dry_run: bool = False):
     bbduk_dir = output_dir / 'bbduk'
@@ -104,13 +136,14 @@ def run_megahit(r1_fastq: Path, r2_fastq: Path, output_dir: Path,
 
 
 def align_contigs_to_ref(contigs: Path, reference: Path, align_dir: Path,
-                         sample_name: str, dry_run: bool = False):
+                         sample_name: str, dry_run: bool = False,
+                         threads: int = 1):
 
     sam_file = align_dir / f"{sample_name}.aligned.sam"
     # Note: this was tested on conda-installed bwa-mem2
     bwa_mem2_fa_command = [
         'bwa-mem2', 'mem', str(reference), str(contigs), '-o',
-        str(sam_file)
+        str(sam_file), '-t', str(threads)
     ]
 
     logging.info(f"bwa mem command: {shlex.join(bwa_mem2_fa_command)}")
@@ -185,13 +218,13 @@ def samtools_index_bam(bam_file: Path, dry_run: bool = False):
 
 def align_reads_to_consensus(r1_fastq: Path, r2_fastq: Path, reference: Path,
                              align_dir: Path, sample_name: str,
-                             dry_run: bool = False):
+                             dry_run: bool = False, threads: int = 1):
 
     sam_file = align_dir / f"{sample_name}.consensus.aligned.sam"
     # Note: this was tested on conda-installed bwa-mem2
     bwa_mem2_fq_command = [
         'bwa-mem2', 'mem', str(reference), '-o', str(sam_file), str(r1_fastq),
-	 str(r2_fastq)
+	 str(r2_fastq), '-t', str(threads)
     ]
 
     logging.info(f"bwa mem command: {shlex.join(bwa_mem2_fq_command)}")
@@ -335,6 +368,11 @@ def parse_args():
         help="Force overwriting existing files in the output directory",
         action="store_true", required=False, default=False
     )
+    parser.add_argument(
+        '--threads', type=int,
+        help="Set the number of threads available to use",
+        required=False, default=None
+    )
 
     return parser.parse_args()
 
@@ -368,6 +406,9 @@ def run(*args, **kwargs):
     else:
         tmp_dir.mkdir()
 
+    # Set number of threads
+    threads = set_threads(args.threads)
+
     # Run QC on Reads with Trimmomatic or BBDuk
     if args.use_bbduk:
         r1_fq_trim, r2_fq_trim, trim_cmd = run_bbduk(
@@ -389,7 +430,7 @@ def run(*args, **kwargs):
 
     aligned_contigs, align_contigs_cmd = align_contigs_to_ref(
         contigs, args.reference, align_dir, args.sample_name,
-        dry_run=args.dry_run)
+        dry_run=args.dry_run, threads=threads)
 
     bam_aligned_contigs, sam_to_bam_cmd = sam_to_bam(
         aligned_contigs, args.reference, dry_run=args.dry_run)
@@ -410,7 +451,7 @@ def run(*args, **kwargs):
 
     aligned_reads, align_reads_cmd = align_reads_to_consensus(
         r1_fq_trim, r2_fq_trim, consensus_fasta, align_dir, args.sample_name,
-        dry_run=args.dry_run)
+        dry_run=args.dry_run, threads=threads)
 
     bam_aligned_reads, read_sam_to_bam_cmd = sam_to_bam(
         aligned_reads, consensus_fasta, dry_run=args.dry_run)
