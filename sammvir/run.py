@@ -462,6 +462,22 @@ def run(*args, **kwargs):
     indexed_reads_bam, index_reads_bam_cmd = samtools_index_bam(
         sorted_bam_aligned_reads, dry_run=args.dry_run)
 
+    # TODO: Finish integrated stats in main runs
+    # stats_dir = tmp_dir / 'stats'
+
+    # if stats_dir.exists():
+    #     if args.force_run:
+    #         logging.warning(f"Removing and recreating directory {stats_dir}")
+    #         shutil.rmtree(stats_dir)
+    #         stats_dir.mkdir()
+    #     else:
+    #         logging.error(f"Output directory {stats_dir} already exists. "
+    #                       "Some down-stream software will fail. Specify "
+    #                       "new output directory or use --force-run, which "
+    #                       "will overwrite existing files.")
+    #         exit(1)
+    # else:
+    #     stats_dir.mkdir()
 
 if __name__ == '__main__':
     # This allows you to do "python run.py"
